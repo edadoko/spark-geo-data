@@ -1,8 +1,9 @@
+from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 
 
 def read_data_from_file(file_path):
-	return spark.read.csv(file_path, header=True)
+	return spark.read.csv(file_path, header=True, inferSchema=True, ignoreLeadingWhiteSpace=True)
 
 
 def remove_dups(df, duplicate_columns=[], remove=False):
@@ -11,66 +12,74 @@ def remove_dups(df, duplicate_columns=[], remove=False):
 	if the remove flag is set, remove duplicates entirely from the dataset.
 	"""
 	if remove:
-		return df.groupby(duplicate_columns).count().where(F.col("count") > 1)
+		return df.groupby(duplicate_columns).count().where(F.col("count") == 1)
 	return df.dropDuplicates(subset=duplicate_columns)
 
 
-def haversine(lon1, lat1, lon2, lat2):
-	"""
-	Calculate the great circle distance between two points 
-	on the earth (specified in decimal degrees)
-	"""
-	# convert decimal degrees to radians 
-	lon1, lat1, lon2, lat2 = map(F.radians, [lon1, lat1, lon2, lat2])
-	# haversine formula 
-	dlon = lon2 - lon1
-	dlat = lat2 - lat1
-	a = F.sin(dlat/2)**2 + F.cos(lat1) * F.cos(lat2) * F.sin(dlon/2)**2
-	c = 2 * F.asin(F.sqrt(a))
-	r = 6371 # Radius of earth in kilometers (3956 for miles)
-	return c * r
-
-
-def get_min_dist(df, poi):
-	# assuming that poi_list is never going to be big enough to need to be paralelized
-	poi_list = [list(row) for row in poi.collect()]
-	lon = 2
-	lat = 1
-	dist1 = haversine(df["Longitude"], df["Latitude"], poi_list[0][lon], poi_list[0][lat]) 
-	dist2 = haversine(df["Longitude"], df["Latitude"], poi_list[1][lon], poi_list[1][lat]) 
-	dist3 = haversine(df["Longitude"], df["Latitude"], poi_list[2][lon], poi_list[2][lat]) 
-	distance = F.least(dist1, dist2, dist3)
-
-	return df.withColumn("distance", distance)#.withColumn("label", name)
-
-
 if __name__ == '__main__':
+	spark = SparkSession\
+			.builder\
+			.appName("spark-app")\
+			.getOrCreate()
 	sample_data = read_data_from_file("/tmp/data/DataSample.csv")
 	poi_list = read_data_from_file("/tmp/data/POIList.csv")
-	# sample_data.count() == 22025
-	# poi_list.count() == 4
+	print(sample_data.count() == 22025)
+	print(poi_list.count() == 4)
 
 	# 0. Cleanup
-	df = remove_dups(sample_data, [" TimeSt", "Latitude", "Longitude"])
-	poi = remove_dups(poi_list, [" Latitude", "Longitude"])
-	# clean_df.count() == 19999
-	# clean_poi.count == 3
+	df = remove_dups(sample_data, ["TimeSt", "Latitude", "Longitude"])
+	poi_df = remove_dups(poi_list, ["Latitude", "Longitude"])
+	print(df.count() == 19999)
+	print(poi_df.count() == 3)
+
 
 	# 1. Label
-	df = get_min_dist(df, poi)
-	
+	poi_map = {r["POIID"]: (r["Latitude"], r["Longitude"]) 
+				for r in poi_df.collect()}
+
+	# compute distance to each POI
+	for poi, (lat, lon) in poi_map.items():
+		print(poi, lat, lon)
+		df = df.withColumn("dist_to_{0:s}".format(poi),
+							F.array([F.sqrt((F.col("Longitude") - F.lit(lat))**2
+							 				+ (F.col("Latitude") - F.lit(lon))**2),
+							F.lit(poi)]))
+		df = df.withColumn("h_dist_to_{0:s}".format(poi),
+							F.array([2.0
+								* F.asin(F.sqrt(F.sin(0.5 * F.radians(F.col("Latitude")) - F.radians(F.lit(lat)))**2
+												+ F.cos(F.radians(F.col("Latitude")))
+												  * F.cos(F.radians(F.lit(lat)))
+												  * F.sin(0.5 * (F.radians(F.col("Longitude")) -F.radians(F.lit(lon))))**2)),
+								F.lit(poi)]))
+
+	# Find the nearest POI
+	df = (df 
+		  .withColumn("label",
+		  			  F.least(*[F.col("dist_to_{0:s}".format(poi))
+		  			  			for poi in poi_map])[1])
+		  .drop(*["dist_to_{0:s}".format(poi) for poi in poi_map]))
+
+	df = (df
+		  .withColumn("h_label",
+		  			  F.least(*[F.col("h_dist_to_{0:s}".format(poi))
+		  			  			for poi in poi_map])[1])
+		  .drop(*["h_dist_to_{0:s}".format(poi) for poi in poi_map]))
+
+	df.show(5)
+
+
+	# 2. Analysis
+	## i. Calculate avg and std wrt poi
 
 
 
+	# groupby the assigned POI and then use agg to get the avg and std of all points assigned to each POI
+
+	## ii. Draw circles centered at POI, find radius and density
 
 
-	 # 2. Analysis
-	 ## i. Calculate avg and std wrt poi
-	 ## ii. Draw circles centered at POI, find radius and density
-
-
-	 # 3. Model
-	 ## i. map density of POI to [-10, 10]
-	 ## ii. POI hypotheses
+	# 3. Model
+	## i. map density of POI to [-10, 10]
+	## ii. POI hypotheses
 
 
