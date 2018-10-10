@@ -23,6 +23,8 @@ master:
   volumes:
     - ./conf/master:/conf
     - ./data:/tmp/data
+    - ./data-analysis:/tmp/src
+
 
 worker:
   image: gettyimages/spark
