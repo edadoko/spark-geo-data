@@ -71,10 +71,6 @@ if __name__ == '__main__':
 	# 2. Analysis
 	## i. Calculate avg and std wrt poi
 
-
-
-	# groupby the assigned POI and then use agg to get the avg and std of all points assigned to each POI
-
 	## ii. Draw circles centered at POI, find radius and density
 
 
