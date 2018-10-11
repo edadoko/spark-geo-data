@@ -1,0 +1,3 @@
+It would be insightful and improve the modeling if we started to use the TimeSt attribute when mining the data.  
+It would be interesting to see the times when each POI is most visited, and if there is a pattern when a POI
+is being most visited. 
