@@ -1,6 +1,7 @@
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 
+
 def read_data_from_file(file_path):
 	return spark.read.csv(file_path, header=True, inferSchema=True, ignoreLeadingWhiteSpace=True)
 
@@ -64,8 +65,13 @@ if __name__ == '__main__':
 
 	# 2. Analysis
 	## i. Calculate avg and std wrt poi
+	df = df.withColumn("poi", F.col("h_label")[1]).withColumn("distance", F.col("h_label")[0])
+	df_stats = df.groupBy("poi").agg(F.avg("distance").alias("avg"), F.stddev("distance").alias("std"), 
+									 F.max("distance").alias("max"), F.min("distance").alias("min"))
 
-	## ii. Draw circles centered at POI, find radius and density
+	## ii. write data to file for further visualization
+	df_stats.coalesce(1).write.csv("/tmp/data/stats.csv", header='true')
+
 
 	# 3. Model
 	## i. map density of POI to [-10, 10]
